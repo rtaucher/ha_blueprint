@@ -11,7 +11,8 @@ blueprint:
     sie eingeschaltet ist. Sonst würde der Überschuss durch das Laden selbst "verschwinden"
     und die Steckdose sofort wieder ausgehen.
   domain: automation
-  min_version: 2024.10.0
+  homeassistant:
+    min_version: 2024.10.0
   input:
     basis:
       name: Grundeinstellungen
