@@ -1,0 +1,347 @@
+blueprint:
+  name: PV-Überschuss → Steckdose schalten (Auto laden)
+  description: >
+    Schaltet eine Steckdose (z. B. für die Ladung eines E-Autos), sobald die PV-Anlage
+    Überschuss hat und einspeisen würde. Mit Hysterese, Ein-/Ausschaltverzögerung,
+    Mindestlaufzeit, optionaler Hausbatterie-Priorität, Auto-Ladestand, "Auto angesteckt"-Prüfung
+    und Zeitfenster.
+
+
+    **Wichtig:** Die eigene Leistung der Steckdose wird zum Netzwert dazugerechnet, sobald
+    sie eingeschaltet ist. Sonst würde der Überschuss durch das Laden selbst "verschwinden"
+    und die Steckdose sofort wieder ausgehen.
+  domain: automation
+  min_version: 2024.10.0
+  input:
+    basis:
+      name: Grundeinstellungen
+      icon: mdi:solar-power
+      input:
+        grid_sensor:
+          name: Netzleistung (Sensor)
+          description: Leistung am Netzanschlusspunkt in Watt (Smartmeter, Shelly 3EM, Wechselrichter, ...).
+          selector:
+            entity:
+              domain: sensor
+              device_class: power
+        feed_in_positive:
+          name: Positiver Wert = Einspeisung
+          description: >
+            Einschalten, wenn dein Sensor bei Einspeisung POSITIVE Werte liefert.
+            Ausgeschaltet, wenn Einspeisung negativ ist (Bezug positiv) – das ist bei den
+            meisten Zählern der Fall.
+          default: false
+          selector:
+            boolean: {}
+        target_switch:
+          name: Steckdose / Schalter
+          description: Die Steckdose, an der das Auto bzw. die Wallbox hängt.
+          selector:
+            entity:
+              domain:
+                - switch
+                - input_boolean
+        load_power_sensor:
+          name: Leistungssensor der Steckdose (optional)
+          description: >
+            Misst die Steckdose die Leistung, hier auswählen. Sonst wird der feste Wert
+            unten verwendet.
+          default: ""
+          selector:
+            entity:
+              domain: sensor
+              device_class: power
+        load_power:
+          name: Erwartete Ladeleistung (W)
+          description: Wird verwendet, wenn kein Leistungssensor gewählt ist. Schuko 8 A ≈ 1840 W, 10 A ≈ 2300 W.
+          default: 2000
+          selector:
+            number:
+              min: 100
+              max: 11000
+              step: 50
+              unit_of_measurement: W
+              mode: box
+    schwellen:
+      name: Schwellwerte & Zeitverhalten
+      icon: mdi:timer-cog
+      collapsed: false
+      input:
+        start_threshold:
+          name: Einschalten ab Überschuss (W)
+          description: Sollte mindestens der Ladeleistung entsprechen.
+          default: 2000
+          selector:
+            number:
+              min: 0
+              max: 11000
+              step: 50
+              unit_of_measurement: W
+              mode: box
+        stop_threshold:
+          name: Ausschalten unter Überschuss (W)
+          description: >
+            Fällt der Überschuss (inkl. Eigenverbrauch der Steckdose) darunter, wird
+            ausgeschaltet. Kleiner als der Einschaltwert wählen (Hysterese), z. B. 1500 W.
+          default: 1500
+          selector:
+            number:
+              min: -5000
+              max: 11000
+              step: 50
+              unit_of_measurement: W
+              mode: box
+        start_delay:
+          name: Einschaltverzögerung
+          description: Überschuss muss so lange durchgehend vorhanden sein (gegen Wolken-Flackern).
+          default:
+            hours: 0
+            minutes: 3
+            seconds: 0
+          selector:
+            duration: {}
+        stop_delay:
+          name: Ausschaltverzögerung
+          description: Überschuss muss so lange durchgehend zu niedrig sein.
+          default:
+            hours: 0
+            minutes: 5
+            seconds: 0
+          selector:
+            duration: {}
+        min_runtime:
+          name: Mindestlaufzeit (Minuten)
+          description: Nach dem Einschalten wird frühestens nach dieser Zeit wieder ausgeschaltet (schont Schütz/Auto).
+          default: 10
+          selector:
+            number:
+              min: 0
+              max: 120
+              step: 1
+              unit_of_measurement: min
+              mode: box
+    batterie:
+      name: Hausbatterie (optional)
+      icon: mdi:battery-charging
+      collapsed: true
+      input:
+        battery_soc:
+          name: Ladestand Hausbatterie
+          description: Leer lassen, wenn keine Batterie vorhanden bzw. keine Batterie-Priorität gewünscht.
+          default: ""
+          selector:
+            entity:
+              domain: sensor
+              device_class: battery
+        battery_start:
+          name: Auto erst laden ab Batterie-Ladestand (%)
+          default: 80
+          selector:
+            number:
+              min: 0
+              max: 100
+              step: 1
+              unit_of_measurement: "%"
+              mode: slider
+        battery_stop:
+          name: Ausschalten, wenn Batterie unter (%) fällt
+          description: Muss kleiner als der Startwert sein.
+          default: 60
+          selector:
+            number:
+              min: 0
+              max: 100
+              step: 1
+              unit_of_measurement: "%"
+              mode: slider
+    auto:
+      name: Auto & Zeitfenster
+      icon: mdi:car-electric
+      collapsed: true
+      input:
+        car_soc:
+          name: Ladestand Auto (optional)
+          default: ""
+          selector:
+            entity:
+              domain: sensor
+              device_class: battery
+        car_target:
+          name: Ziel-Ladestand Auto (%)
+          description: Bei Erreichen wird ausgeschaltet.
+          default: 80
+          selector:
+            number:
+              min: 10
+              max: 100
+              step: 1
+              unit_of_measurement: "%"
+              mode: slider
+        car_connected:
+          name: Auto angesteckt (optional)
+          description: Entität mit Zustand "on", wenn das Auto angesteckt ist.
+          default: ""
+          selector:
+            entity:
+              domain:
+                - binary_sensor
+                - input_boolean
+                - switch
+        window_start:
+          name: Zeitfenster Beginn
+          default: "06:00:00"
+          selector:
+            time: {}
+        window_end:
+          name: Zeitfenster Ende
+          default: "20:00:00"
+          selector:
+            time: {}
+    aktionen:
+      name: Zusätzliche Aktionen (optional)
+      icon: mdi:bell-outline
+      collapsed: true
+      input:
+        on_start_actions:
+          name: Nach dem Einschalten ausführen
+          description: z. B. eine Benachrichtigung aufs Handy.
+          default: []
+          selector:
+            action: {}
+        on_stop_actions:
+          name: Nach dem Ausschalten ausführen
+          default: []
+          selector:
+            action: {}
+
+mode: restart
+max_exceeded: silent
+
+trigger_variables:
+  grid_sensor: !input grid_sensor
+  feed_in_positive: !input feed_in_positive
+  target_switch: !input target_switch
+  load_power_sensor: !input load_power_sensor
+  load_power: !input load_power
+  start_threshold: !input start_threshold
+  stop_threshold: !input stop_threshold
+  battery_soc: !input battery_soc
+  battery_start: !input battery_start
+  battery_stop: !input battery_stop
+  car_soc: !input car_soc
+  car_target: !input car_target
+  car_connected: !input car_connected
+  window_start: !input window_start
+  window_end: !input window_end
+
+triggers:
+  # 1) Genug Überschuss, alle Bedingungen erfüllt -> einschalten
+  - trigger: template
+    id: start
+    value_template: >-
+      {%- set g = states(grid_sensor) | float(none) -%}
+      {%- if g is none -%}
+        false
+      {%- else -%}
+        {%- set own = 0 if not is_state(target_switch, 'on') else ((states(load_power_sensor) | float(load_power)) if load_power_sensor != '' else load_power) -%}
+        {%- set s = (g if feed_in_positive else -g) + own -%}
+        {%- set bat_ok = true if battery_soc == '' else (states(battery_soc) | float(-1)) >= battery_start -%}
+        {%- set car_ok = true if car_soc == '' else (states(car_soc) | float(0)) < car_target -%}
+        {%- set plug_ok = true if car_connected == '' else is_state(car_connected, 'on') -%}
+        {%- set t = now().strftime('%H:%M:%S') -%}
+        {%- set in_win = (window_start <= t < window_end) if window_start <= window_end else (t >= window_start or t < window_end) -%}
+        {{ s >= start_threshold and bat_ok and car_ok and plug_ok and in_win }}
+      {%- endif -%}
+    for: !input start_delay
+
+  # 2) Überschuss zu niedrig oder Batterie zu leer -> ausschalten (mit Verzögerung)
+  - trigger: template
+    id: stop
+    value_template: >-
+      {%- set g = states(grid_sensor) | float(none) -%}
+      {%- set own = 0 if not is_state(target_switch, 'on') else ((states(load_power_sensor) | float(load_power)) if load_power_sensor != '' else load_power) -%}
+      {%- set low = g is not none and ((g if feed_in_positive else -g) + own) < stop_threshold -%}
+      {%- set bat_low = battery_soc != '' and (states(battery_soc) | float(100)) < battery_stop -%}
+      {{ low or bat_low }}
+    for: !input stop_delay
+
+  # 3) Zeitfenster zu Ende, Auto voll oder abgesteckt -> sofort ausschalten
+  - trigger: template
+    id: hard_stop
+    value_template: >-
+      {%- set t = now().strftime('%H:%M:%S') -%}
+      {%- set in_win = (window_start <= t < window_end) if window_start <= window_end else (t >= window_start or t < window_end) -%}
+      {%- set full = car_soc != '' and (states(car_soc) | float(0)) >= car_target -%}
+      {%- set unplugged = car_connected != '' and is_state(car_connected, 'off') -%}
+      {{ (not in_win) or full or unplugged }}
+
+variables:
+  target_switch: !input target_switch
+  min_runtime: !input min_runtime
+  grid_sensor: !input grid_sensor
+  feed_in_positive: !input feed_in_positive
+  load_power_sensor: !input load_power_sensor
+  load_power: !input load_power
+  stop_threshold: !input stop_threshold
+  battery_soc: !input battery_soc
+  battery_stop: !input battery_stop
+
+actions:
+  - choose:
+      # --- Einschalten ---
+      - conditions:
+          - condition: trigger
+            id: start
+          - condition: template
+            value_template: "{{ not is_state(target_switch, 'on') }}"
+        sequence:
+          - action: homeassistant.turn_on
+            target:
+              entity_id: !input target_switch
+          - if:
+              - condition: template
+                value_template: "{{ true }}"
+            then: !input on_start_actions
+
+      # --- Ausschalten wegen zu wenig Überschuss (Mindestlaufzeit beachten) ---
+      - conditions:
+          - condition: trigger
+            id: stop
+          - condition: template
+            value_template: "{{ is_state(target_switch, 'on') }}"
+        sequence:
+          - delay:
+              seconds: >-
+                {{ [0, (min_runtime | float(0) * 60) - (now() - states[target_switch].last_changed).total_seconds()] | max | int }}
+          # nach der Wartezeit nochmal prüfen, ob der Überschuss immer noch zu niedrig ist
+          - variables:
+              still_low: >-
+                {%- set g = states(grid_sensor) | float(none) -%}
+                {%- set own = ((states(load_power_sensor) | float(load_power)) if load_power_sensor != '' else load_power) -%}
+                {%- set low = g is not none and ((g if feed_in_positive else -g) + own) < stop_threshold -%}
+                {%- set bat_low = battery_soc != '' and (states(battery_soc) | float(100)) < battery_stop -%}
+                {{ low or bat_low }}
+          - condition: template
+            value_template: "{{ still_low }}"
+          - action: homeassistant.turn_off
+            target:
+              entity_id: !input target_switch
+          - if:
+              - condition: template
+                value_template: "{{ true }}"
+            then: !input on_stop_actions
+
+      # --- Sofort ausschalten (Zeitfenster, Auto voll, abgesteckt) ---
+      - conditions:
+          - condition: trigger
+            id: hard_stop
+          - condition: template
+            value_template: "{{ is_state(target_switch, 'on') }}"
+        sequence:
+          - action: homeassistant.turn_off
+            target:
+              entity_id: !input target_switch
+          - if:
+              - condition: template
+                value_template: "{{ true }}"
+            then: !input on_stop_actions
